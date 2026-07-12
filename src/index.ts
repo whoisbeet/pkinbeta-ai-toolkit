@@ -22,8 +22,9 @@ if (!apiKey) {
   throw new Error('GEMINI_API_KEY environment variable is required');
 }
 
+// Standard initialization using the official @google/generative-ai library
 const genAI = new GoogleGenerativeAI(apiKey);
-const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
@@ -46,7 +47,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   if (request.params.name === 'generate_text') {
-    const prompt = (request.params.arguments as any)?.prompt;
+    const args = request.params.arguments as { prompt?: string } | undefined;
+    const prompt = args?.prompt;
     if (!prompt) {
       throw new Error('Prompt is required');
     }
