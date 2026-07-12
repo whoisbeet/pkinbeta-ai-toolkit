@@ -5,7 +5,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const app = express();
-app.use(express.json()); // Essential for handling POST bodies in /messages
+app.use(express.json());
 
 const server = new Server(
   {
@@ -24,9 +24,9 @@ if (!apiKey) {
   throw new Error('GEMINI_API_KEY environment variable is required');
 }
 
-// Initializing with the standard model name. 
-// Note: gemini-1.5-flash is the stable production identifier.
+// Ensure proper initialization of the client
 const genAI = new GoogleGenerativeAI(apiKey);
+// Using the stable model identifier
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
@@ -57,19 +57,28 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     try {
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
+      // Use simple non-streaming generateContent and wait for completion
+      const result = await model.generateContent({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      });
+      
+      const response = result.response;
       const text = response.text();
+
+      if (!text) {
+        throw new Error('Empty response from Gemini');
+      }
 
       return {
         content: [
           {
             type: 'text',
-            text,
+            text: text,
           },
         ],
       };
     } catch (error) {
+      console.error('Gemini API Error:', error);
       return {
         content: [
           {
@@ -88,13 +97,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 let transport: SSEServerTransport | null = null;
 
 app.get('/sse', async (req, res) => {
-  console.log('New SSE connection attempt');
+  console.log('Establishing new SSE connection');
   transport = new SSEServerTransport('/messages', res);
   await server.connect(transport);
+  
+  // Clean up transport on connection close
+  req.on('close', () => {
+    console.log('SSE connection closed');
+    transport = null;
+  });
 });
 
 app.post('/messages', async (req, res) => {
-  console.log('Received message via /messages');
   if (transport) {
     await transport.handlePostMessage(req, res);
   } else {
