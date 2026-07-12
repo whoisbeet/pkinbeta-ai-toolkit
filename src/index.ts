@@ -5,6 +5,8 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const app = express();
+app.use(express.json()); // Essential for handling POST bodies in /messages
+
 const server = new Server(
   {
     name: 'pkinbeta-ai-toolkit',
@@ -22,7 +24,8 @@ if (!apiKey) {
   throw new Error('GEMINI_API_KEY environment variable is required');
 }
 
-// Standard initialization using the official @google/generative-ai library
+// Initializing with the standard model name. 
+// Note: gemini-1.5-flash is the stable production identifier.
 const genAI = new GoogleGenerativeAI(apiKey);
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
@@ -85,11 +88,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 let transport: SSEServerTransport | null = null;
 
 app.get('/sse', async (req, res) => {
+  console.log('New SSE connection attempt');
   transport = new SSEServerTransport('/messages', res);
   await server.connect(transport);
 });
 
 app.post('/messages', async (req, res) => {
+  console.log('Received message via /messages');
   if (transport) {
     await transport.handlePostMessage(req, res);
   } else {
