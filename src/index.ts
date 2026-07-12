@@ -1,16 +1,20 @@
 import express from 'express';
+import cors from 'cors';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const app = express();
+
+// Enable CORS for Poke's validator and client
+app.use(cors());
 app.use(express.json());
 
 const server = new Server(
   {
     name: 'pkinbeta-ai-toolkit',
-    version: '1.1.0',
+    version: '1.2.0',
   },
   {
     capabilities: {
@@ -75,13 +79,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   throw new Error(`Tool not found: ${request.params.name}`);
 });
 
-// Serverless-safe transport management
+// Root path to prevent 404 during validation
+app.get('/', (req, res) => {
+  res.json({
+    mcp_server: "pkinbeta-ai-toolkit",
+    status: "active",
+    endpoints: ["/sse", "/messages"]
+  });
+});
+
 let transport: SSEServerTransport | null = null;
 
 app.get('/sse', async (req, res) => {
   console.log('Establishing new SSE connection');
   
-  // Force Vercel to disable buffering for SSE
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
@@ -100,12 +111,11 @@ app.post('/messages', async (req, res) => {
   if (transport) {
     await transport.handlePostMessage(req, res);
   } else {
-    // If transport is lost (common in serverless), we fail gracefully
-    res.status(400).send('No active SSE session found in this instance');
+    res.status(400).send('No active SSE session found');
   }
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Gemini MCP server v1.1.0 listening on port ${PORT}`);
+  console.log(`Gemini MCP server v1.2.0 listening on port ${PORT}`);
 });
