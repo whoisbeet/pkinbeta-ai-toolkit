@@ -10,7 +10,7 @@ app.use(express.json());
 const server = new Server(
   {
     name: 'pkinbeta-ai-toolkit',
-    version: '1.0.0',
+    version: '1.1.0',
   },
   {
     capabilities: {
@@ -24,9 +24,7 @@ if (!apiKey) {
   throw new Error('GEMINI_API_KEY environment variable is required');
 }
 
-// Ensure proper initialization of the client
 const genAI = new GoogleGenerativeAI(apiKey);
-// Using the stable model identifier
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
@@ -57,7 +55,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     try {
-      // Use simple non-streaming generateContent and wait for completion
       const result = await model.generateContent({
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
       });
@@ -65,44 +62,35 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const response = result.response;
       const text = response.text();
 
-      if (!text) {
-        throw new Error('Empty response from Gemini');
-      }
-
       return {
-        content: [
-          {
-            type: 'text',
-            text: text,
-          },
-        ],
+        content: [{ type: 'text', text: text || 'Empty response' }],
       };
     } catch (error) {
-      console.error('Gemini API Error:', error);
       return {
-        content: [
-          {
-            type: 'text',
-            text: `Error calling Gemini: ${error instanceof Error ? error.message : String(error)}`,
-          },
-        ],
+        content: [{ type: 'text', text: `Error: ${error instanceof Error ? error.message : String(error)}` }],
         isError: true,
       };
     }
   }
-
   throw new Error(`Tool not found: ${request.params.name}`);
 });
 
+// Serverless-safe transport management
 let transport: SSEServerTransport | null = null;
 
 app.get('/sse', async (req, res) => {
   console.log('Establishing new SSE connection');
+  
+  // Force Vercel to disable buffering for SSE
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+
   transport = new SSEServerTransport('/messages', res);
   await server.connect(transport);
-  
-  // Clean up transport on connection close
-  req.on('close', () => {
+
+  req.on('close', async () => {
     console.log('SSE connection closed');
     transport = null;
   });
@@ -112,11 +100,12 @@ app.post('/messages', async (req, res) => {
   if (transport) {
     await transport.handlePostMessage(req, res);
   } else {
-    res.status(400).send('No active SSE connection');
+    // If transport is lost (common in serverless), we fail gracefully
+    res.status(400).send('No active SSE session found in this instance');
   }
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Gemini MCP server listening on port ${PORT}`);
+  console.log(`Gemini MCP server v1.1.0 listening on port ${PORT}`);
 });
